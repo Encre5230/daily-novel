@@ -1,0 +1,49 @@
+name: 每日小說
+
+on:
+  schedule:
+    # 每天台灣時間早上 06:17 開始寫（UTC 22:17），約 07:00 前送達 LINE
+    - cron: "17 22 * * *"
+  workflow_dispatch: {}   # 允許在 GitHub 上手動按「Run workflow」立即執行
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-novel
+  cancel-in-progress: false
+
+jobs:
+  write-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 寫今天的小說
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
+          FEEDBACK_TOKEN: ${{ secrets.FEEDBACK_TOKEN }}
+        run: python bot/generate.py
+
+      - name: 儲存並發布網站
+        run: |
+          git config user.name "novel-bot"
+          git config user.email "novel-bot@users.noreply.github.com"
+          git add data docs
+          git commit -m "今日小說 $(TZ=Asia/Taipei date +%Y-%m-%d)"
+          git push
+
+      - name: 傳送 LINE 通知
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: python bot/notify.py
